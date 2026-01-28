@@ -2,5 +2,4 @@ requests
 beautifulsoup4
 pandas
 schedule
-datetime
-sqlite3
+
