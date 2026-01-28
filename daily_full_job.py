@@ -9,7 +9,7 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from stock_scraper_db import init_database, daily_scrape_job
 
 # Import and run ETL
-from etl_pipeline import run_etl
+from etl_pipeline import etl_pipeline as run_etl
 
 if __name__ == "__main__":
     print("=== Starting daily full job ===")
