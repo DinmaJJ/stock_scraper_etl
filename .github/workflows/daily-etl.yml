@@ -1,0 +1,27 @@
+name: Daily Stock Scraper & ETL
+
+on:
+  schedule:
+    - cron: '0 7 * * *'  # Runs daily at 7:00 UTC = 8:00 AM WAT
+  workflow_dispatch:     # Allows manual run from GitHub UI
+
+jobs:
+  run-etl:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    - name: Run full daily job
+      run: python daily_full_job.py
