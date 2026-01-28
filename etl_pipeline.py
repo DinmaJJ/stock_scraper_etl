@@ -31,7 +31,7 @@ def transform_stocks_data(df_raw):
 
     df['clean_name'] = df['name'].str.strip()
 
-    df['clean_price'] = df['price'].str.replace('$', '').astype(float)
+    df['clean_price'] = df['price'].str.replace(r'[\$,]', '', regex=True).astype(float)
 
     df['clean_change'] = df['change'].str.replace(r'[\$,]', '', regex=True).astype(float)
 
