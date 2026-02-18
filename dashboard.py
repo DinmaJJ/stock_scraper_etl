@@ -18,10 +18,17 @@ LOCAL_DB_PATH = "stock_data.db"  # Where we save the downloaded file
 
 
 # ── Load data with GCS sync ────────────────────────────────────────────────
-@st.cache_data(ttl=3600)
+@st.cache_data(ttl=3600)  # 1 hour cache – adjust to 300 for 5 min testing
 def load_data():
     url = "https://storage.googleapis.com/chidinma-stock-db-2026/stock_data.db"
-    urllib.request.urlretrieve(url, "stock_data.db")
+    
+    try:
+        # Download the latest file from public GCS
+        urllib.request.urlretrieve(url, "stock_data.db")
+        st.caption("Loaded fresh data from Google Cloud Storage")
+    except Exception as e:
+        st.warning(f"Couldn't download latest DB from GCS: {e}\nUsing cached/local copy.")
+    
     conn = sqlite3.connect("stock_data.db")
     df = pd.read_sql("""
         SELECT 
@@ -31,11 +38,10 @@ def load_data():
         FROM cleaned_stocks 
         ORDER BY scraped_at DESC
     """, conn)
+    
     df['scraped_at'] = pd.to_datetime(df['scraped_at'], errors='coerce')
     conn.close()
     return df
-
-df = load_data()
 
 if df.empty:
     st.warning("No data yet. Run the ETL pipeline first.")
