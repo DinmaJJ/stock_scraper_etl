@@ -42,6 +42,8 @@ def load_data():
     df['scraped_at'] = pd.to_datetime(df['scraped_at'], errors='coerce')
     conn.close()
     return df
+    
+df = load_data()
 
 if df.empty:
     st.warning("No data yet. Run the ETL pipeline first.")
