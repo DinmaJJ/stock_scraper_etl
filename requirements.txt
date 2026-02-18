@@ -3,4 +3,5 @@ beautifulsoup4
 pandas
 schedule
 google-cloud-storage
-
+streamlit
+plotly
