@@ -5,6 +5,7 @@ import plotly.express as px
 from datetime import datetime, timedelta
 import os
 import json
+import urllib.request
 
 st.set_page_config(page_title="Stock Dashboard", layout="wide")
 
@@ -17,24 +18,20 @@ LOCAL_DB_PATH = "stock_data.db"  # Where we save the downloaded file
 
 
 # ── Load data with GCS sync ────────────────────────────────────────────────
-@st.cache_data(ttl=3600)  # refresh every hour
+@st.cache_data(ttl=3600)
 def load_data():
+    url = "https://storage.googleapis.com/chidinma-stock-db-2026/stock_data.db"
+    urllib.request.urlretrieve(url, "stock_data.db")
     conn = sqlite3.connect("stock_data.db")
     df = pd.read_sql("""
         SELECT 
-            ticker, 
-            name, 
-            price, 
-            change, 
-            pct_change,
+            ticker, name, price, change, pct_change,
             datetime(scraped_at) AS scraped_at,
             cleaned_at
         FROM cleaned_stocks 
         ORDER BY scraped_at DESC
     """, conn)
-    
     df['scraped_at'] = pd.to_datetime(df['scraped_at'], errors='coerce')
-    
     conn.close()
     return df
 
