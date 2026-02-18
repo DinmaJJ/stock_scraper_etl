@@ -5,4 +5,4 @@ schedule
 google-cloud-storage
 streamlit
 plotly
-altair
+altair>=5.0.0
