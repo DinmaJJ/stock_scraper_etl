@@ -5,3 +5,4 @@ schedule
 google-cloud-storage
 streamlit
 plotly
+altair
