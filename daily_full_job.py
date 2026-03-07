@@ -1,63 +1,70 @@
-# daily_full_job.py
 import sys
 import os
 from datetime import datetime
 from google.cloud import storage
 import json
+import traceback  # for better error printing
 
 # Make sure we can import from the same directory
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-# Import and run scraper
+# Import scraper and ETL
 from stock_scraper_db import init_database, daily_scrape_job
-
-# Import and run ETL
 from etl_pipeline import etl_pipeline as run_etl
 
-# These will come from GitHub Secrets
+# ── GCP Configuration ────────────────────────────────────────────────────────
 GCP_PROJECT_ID = os.getenv("GCP_PROJECT_ID")
-GCP_KEY_JSON = os.getenv("GCP_KEY_JSON")  # the full JSON string
+GCP_KEY_JSON = os.getenv("GCP_KEY_JSON")  # full JSON string from GitHub Secrets
 
-# Initialize client using the service account key
+BUCKET_NAME = "chidinma-stock-db-2026"
+BLOB_NAME = "stock_data.db"
+LOCAL_PATH = "/tmp/stock_data.db"
+
+# Initialize GCS client
 if GCP_KEY_JSON:
-    # Write key to temp file (GitHub Actions way)
     with open("/tmp/gcp-key.json", "w") as f:
         f.write(GCP_KEY_JSON)
     os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "/tmp/gcp-key.json"
 
 client = storage.Client(project=GCP_PROJECT_ID)
 
-BUCKET_NAME = "chidinma-stock-db-2026"  # your bucket name
-BLOB_NAME = "stock_data.db"
-LOCAL_PATH = "/tmp/stock_data.db"
-
 def download_db():
+    print("Downloading latest DB from GCS...")
     bucket = client.bucket(BUCKET_NAME)
     blob = bucket.blob(BLOB_NAME)
     blob.download_to_filename(LOCAL_PATH)
-    print("Downloaded DB from GCS")
+    print(f"Downloaded {LOCAL_PATH} ({os.path.getsize(LOCAL_PATH):,} bytes)")
 
 def upload_db():
+    print("Uploading updated DB to GCS...")
     bucket = client.bucket(BUCKET_NAME)
     blob = bucket.blob(BLOB_NAME)
     blob.upload_from_filename(LOCAL_PATH)
-    print("Uploaded DB to GCS")
+    print(f"Uploaded {LOCAL_PATH} → gs://{BUCKET_NAME}/{BLOB_NAME}")
 
 if __name__ == "__main__":
     print("=== Starting daily full job ===")
-    print(f"Date/time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"Date/time (UTC): {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}")
+    print(f"Running on weekday: {datetime.now().weekday()} (0=Mon … 6=Sun)")
 
-    # Step 0: Download latest DB from GCS
-    download_db()
+    try:
+        # Step 0: Download latest DB
+        download_db()
 
-    # Step 1: Scrape + save raw data (only on weekdays)
-    init_database()
-    daily_scrape_job()
+        # Step 1: Initialize DB & scrape (only weekdays)
+        init_database()
+        daily_scrape_job()
 
-    # Step 2: Run ETL (clean + load to cleaned_stocks)
-    run_etl()
+        # Step 2: ETL – clean & load to cleaned_stocks
+        print("Running ETL...")
+        run_etl()
 
-    # Step 3: Upload updated DB back to GCS
-    upload_db()
+        # Step 3: Upload back to GCS
+        upload_db()
 
-    print("=== Daily full job completed ===")
+        print("=== Daily full job completed successfully ===")
+
+    except Exception as e:
+        print("!!! ERROR in daily full job !!!")
+        print(traceback.format_exc())
+        raise  # re-raise so Actions shows red status
