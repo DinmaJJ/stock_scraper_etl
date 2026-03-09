@@ -58,10 +58,29 @@ def load_cleaned_data(df_cleaned):
     if df_cleaned.empty:
         print("No cleaned data to load")
         return
+
     conn = get_connection()
-    df_cleaned.to_sql('cleaned_stocks', conn, if_exists='replace', index=False)
+    cursor = conn.cursor()
+
+    # Optional: Create unique index if not exists (prevents duplicates)
+    cursor.execute('''
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_ticker_scraped_at
+        ON cleaned_stocks (ticker, scraped_at)
+    ''')
+
+    # Append new data
+    df_cleaned.to_sql('cleaned_stocks', conn, if_exists='append', index=False)
+
+    # Optional: Clean up very old data (keep last 30 days)
+    cursor.execute('''
+        DELETE FROM cleaned_stocks
+        WHERE scraped_at < date('now', '-30 days')
+    ''')
+
+    conn.commit()
     conn.close()
-    print(f"Replaced 'cleaned_stocks' with {len(df_cleaned)} cleaned records")
+
+    print(f"Appended {len(df_cleaned)} new cleaned records (total now unknown)")
     
 # ETL PIPELINE
 def etl_pipeline():
