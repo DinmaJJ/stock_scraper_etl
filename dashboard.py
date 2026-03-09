@@ -15,7 +15,7 @@ DB_URL = "https://storage.googleapis.com/chidinma-stock-db-2026/stock_data.db"
 LOCAL_DB_PATH = "stock_data.db"
 
 # ── Load data with hash-based cache invalidation ───────────────────────────
-@st.cache_data(show_spinner="Downloading & validating latest stock data...")
+# @st.cache_data(show_spinner="Downloading & validating latest stock data...")
 def load_data():
     try:
         with urllib.request.urlopen(DB_URL) as response:
@@ -37,6 +37,11 @@ def load_data():
         """, conn)
         
         df['scraped_at'] = pd.to_datetime(df['scraped_at'], errors='coerce')
+        
+        # ── DEBUG: Check the real max date from the loaded DB ─────────────────────────
+        debug_max = pd.read_sql("SELECT MAX(scraped_at) FROM cleaned_stocks", conn).iloc[0,0]
+        st.caption(f"DEBUG: Max scraped_at in loaded DB = {debug_max}")
+        
         conn.close()
 
         st.caption(f"Loaded fresh data from GCS • File hash: {file_hash[:8]}...")
