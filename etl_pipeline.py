@@ -55,52 +55,53 @@ def transform_stocks_data(df_raw):
     print(f"Max scraped_at after transform: {df_cleaned['scraped_at'].max()}")  # debug
     return df_cleaned
 
-def load_cleaned_data(df_cleaned):
-    if df_cleaned.empty:
-        print("No cleaned data to load — skipping")
-        return
+def load_cleaned_data(df_cleaned, conn=None):
+    close_conn = False
+    if conn is None:
+        conn = get_connection()
+        close_conn = True
 
-    conn = get_connection()
-
-    # Force create/append
     df_cleaned.to_sql('cleaned_stocks', conn, if_exists='append', index=False)
 
-    # Commit immediately after append
-    conn.commit()
-
-    # Debug right after commit
     cursor = conn.cursor()
     cursor.execute("SELECT MAX(scraped_at) FROM cleaned_stocks")
-    max_date_after = cursor.fetchone()[0]
-    cursor.execute("SELECT COUNT(*) FROM cleaned_stocks")
-    row_count_after = cursor.fetchone()[0]
-    print(f"DEBUG after commit — Max scraped_at: {max_date_after}")
-    print(f"DEBUG after commit — Total rows: {row_count_after}")
+    print(f"DEBUG in load — Max scraped_at: {cursor.fetchone()[0]}")
 
-    # Add index
     cursor.execute('''
         CREATE UNIQUE INDEX IF NOT EXISTS idx_ticker_scraped
         ON cleaned_stocks (ticker, scraped_at)
     ''')
 
-    # Cleanup
     cursor.execute("DELETE FROM cleaned_stocks WHERE scraped_at < date('now', '-45 days')")
 
-    # Final commit & close
     conn.commit()
-    conn.close()
 
-    print(f"Successfully appended {len(df_cleaned)} new rows to cleaned_stocks")
+    if close_conn:
+        conn.close()
+
+    print(f"Successfully appended {len(df_cleaned)} new rows")
     
-def etl_pipeline():
+def etl_pipeline(conn=None):
+    close_conn = False
+    if conn is None:
+        conn = get_connection()
+        close_conn = True
+
     print(f"ETL started at {datetime.now().strftime('%Y-%m-%d %H:%M')}")
-    
-    # Use recent data only (much safer and faster)
+
     df_raw = extract_recent_raw_stocks(days=2)
-    
     if df_raw.empty:
         print("No new raw data found. Skipping ETL.")
+        if close_conn:
+            conn.close()
         return
+
+    cleaned_df = transform_stocks_data(df_raw)
+    load_cleaned_data(cleaned_df, conn=conn)  # pass conn
+
+    if close_conn:
+        conn.close()
+    print("ETL completed successfully.\n")
     
     cleaned_df = transform_stocks_data(df_raw)
     load_cleaned_data(cleaned_df)
