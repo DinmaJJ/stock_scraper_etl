@@ -28,9 +28,14 @@ def transform_stocks_data(df_raw):
     df['clean_change'] = df['change'].str.replace(r'[\+\$,-]', '', regex=True).astype(float, errors='ignore')
     df['clean_pct_change'] = df['pct_change'].str.replace('%', '').astype(float, errors='ignore')
     df['full_url'] = 'https://www.google.com' + df['href'].str.lstrip('.')
+    
+    # Force scraped_at to be datetime — use current time if parsing fails
     df['scraped_at_dt'] = pd.to_datetime(df['scraped_at'], errors='coerce')
+    df['scraped_at_dt'] = df['scraped_at_dt'].fillna(datetime.now())
+
     df = df.dropna(subset=['clean_price', 'clean_ticker'])
     df['cleaned_at'] = datetime.now().isoformat()
+
     keep_cols = [
         'clean_ticker', 'clean_name', 'clean_price', 'clean_change',
         'clean_pct_change', 'full_url', 'scraped_at_dt', 'cleaned_at'
@@ -44,9 +49,10 @@ def transform_stocks_data(df_raw):
         'full_url': 'url',
         'scraped_at_dt': 'scraped_at'
     })
-    # Deduplicate (very important!)
+    
     df_cleaned = df_cleaned.drop_duplicates(subset=['ticker', 'scraped_at'], keep='last')
     print(f"After cleaning & dedup: {len(df_cleaned)} rows")
+    print(f"Max scraped_at after transform: {df_cleaned['scraped_at'].max()}")  # debug
     return df_cleaned
 
 def load_cleaned_data(df_cleaned):
@@ -56,11 +62,20 @@ def load_cleaned_data(df_cleaned):
 
     conn = get_connection()
 
-    # Step 1: Append or create the table (this line creates it if missing)
+    # Step 1: Append or create the table (creates it if missing)
     df_cleaned.to_sql('cleaned_stocks', conn, if_exists='append', index=False)
 
-    # Step 2: Now safe to add index (table definitely exists)
+    # ── DEBUG: Check if new data was really added ──────────────────────────────
     cursor = conn.cursor()
+    try:
+        max_date = cursor.execute("SELECT MAX(scraped_at) FROM cleaned_stocks").fetchone()[0]
+        row_count = cursor.execute("SELECT COUNT(*) FROM cleaned_stocks").fetchone()[0]
+        print(f"DEBUG after append — Max scraped_at in DB: {max_date}")
+        print(f"DEBUG after append — Total rows in cleaned_stocks: {row_count}")
+    except Exception as debug_err:
+        print(f"DEBUG ERROR: Could not query cleaned_stocks: {debug_err}")
+
+    # Step 2: Now safe to add index (table definitely exists)
     cursor.execute('''
         CREATE UNIQUE INDEX IF NOT EXISTS idx_ticker_scraped
         ON cleaned_stocks (ticker, scraped_at)
