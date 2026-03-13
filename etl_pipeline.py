@@ -62,32 +62,35 @@ def load_cleaned_data(df_cleaned):
 
     conn = get_connection()
 
-    # Step 1: Append or create the table (creates it if missing)
+    # Force create/append
     df_cleaned.to_sql('cleaned_stocks', conn, if_exists='append', index=False)
 
-    # ── DEBUG: Check if new data was really added ──────────────────────────────
-    cursor = conn.cursor()
-    try:
-        max_date = cursor.execute("SELECT MAX(scraped_at) FROM cleaned_stocks").fetchone()[0]
-        row_count = cursor.execute("SELECT COUNT(*) FROM cleaned_stocks").fetchone()[0]
-        print(f"DEBUG after append — Max scraped_at in DB: {max_date}")
-        print(f"DEBUG after append — Total rows in cleaned_stocks: {row_count}")
-    except Exception as debug_err:
-        print(f"DEBUG ERROR: Could not query cleaned_stocks: {debug_err}")
+    # Commit immediately after append
+    conn.commit()
 
-    # Step 2: Now safe to add index (table definitely exists)
+    # Debug right after commit
+    cursor = conn.cursor()
+    cursor.execute("SELECT MAX(scraped_at) FROM cleaned_stocks")
+    max_date_after = cursor.fetchone()[0]
+    cursor.execute("SELECT COUNT(*) FROM cleaned_stocks")
+    row_count_after = cursor.fetchone()[0]
+    print(f"DEBUG after commit — Max scraped_at: {max_date_after}")
+    print(f"DEBUG after commit — Total rows: {row_count_after}")
+
+    # Add index
     cursor.execute('''
         CREATE UNIQUE INDEX IF NOT EXISTS idx_ticker_scraped
         ON cleaned_stocks (ticker, scraped_at)
     ''')
 
-    # Step 3: Clean old data (keep last 45 days)
+    # Cleanup
     cursor.execute("DELETE FROM cleaned_stocks WHERE scraped_at < date('now', '-45 days')")
 
+    # Final commit & close
     conn.commit()
     conn.close()
 
-    print(f"Successfully appended {len(df_cleaned)} new rows to cleaned_stocks (table now exists)")
+    print(f"Successfully appended {len(df_cleaned)} new rows to cleaned_stocks")
     
 def etl_pipeline():
     print(f"ETL started at {datetime.now().strftime('%Y-%m-%d %H:%M')}")
