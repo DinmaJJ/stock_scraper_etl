@@ -7,19 +7,19 @@ DB_FILE = "stock_data.db"
 def get_connection():
     return sqlite3.connect(DB_FILE)
 
-# EXTRACTION: Get ALL raw data (not just recent) — this is the key change
-def extract_all_raw_stocks():
+def extract_recent_raw_stocks(days=2):
+    """Extract only recent raw data to avoid processing old junk every time"""
     conn = get_connection()
-    query = '''
+    query = f'''
         SELECT * FROM raw_stocks
+        WHERE scraped_at >= date('now', '-{days} days')
         ORDER BY scraped_at DESC
     '''
     df = pd.read_sql_query(query, conn)
     conn.close()
-    print(f"Extracted {len(df)} recent raw records (last {days} days)")    
+    print(f"Extracted {len(df)} recent raw records (last {days} days)")
     return df
 
-# TRANSFORMATION (same as before, but applied to all raw data)
 def transform_stocks_data(df_raw):
     df = df_raw.copy()
     df['clean_ticker'] = df['ticker'].str.strip()
@@ -28,11 +28,9 @@ def transform_stocks_data(df_raw):
     df['clean_change'] = df['change'].str.replace(r'[\+\$,-]', '', regex=True).astype(float, errors='ignore')
     df['clean_pct_change'] = df['pct_change'].str.replace('%', '').astype(float, errors='ignore')
     df['full_url'] = 'https://www.google.com' + df['href'].str.lstrip('.')
-
     df['scraped_at_dt'] = pd.to_datetime(df['scraped_at'], errors='coerce')
     df = df.dropna(subset=['clean_price', 'clean_ticker'])
     df['cleaned_at'] = datetime.now().isoformat()
-
     keep_cols = [
         'clean_ticker', 'clean_name', 'clean_price', 'clean_change',
         'clean_pct_change', 'full_url', 'scraped_at_dt', 'cleaned_at'
@@ -46,49 +44,45 @@ def transform_stocks_data(df_raw):
         'full_url': 'url',
         'scraped_at_dt': 'scraped_at'
     })
-
-    # Deduplicate (important!)
+    # Deduplicate (very important!)
     df_cleaned = df_cleaned.drop_duplicates(subset=['ticker', 'scraped_at'], keep='last')
-
     print(f"After cleaning & dedup: {len(df_cleaned)} rows")
     return df_cleaned
 
-# LOADING: Replace the entire cleaned table (since we re-process everything)
 def load_cleaned_data(df_cleaned):
     if df_cleaned.empty:
-        print("No cleaned data to load")
+        print("No cleaned data to load — skipping")
         return
 
     conn = get_connection()
 
-    # This is the key fix: always create the table if it doesn't exist
+    # Append new data (creates table if missing)
     df_cleaned.to_sql('cleaned_stocks', conn, if_exists='append', index=False)
 
-    # Add index safely AFTER the table exists
+    # Add unique index safely (after table exists)
     cursor = conn.cursor()
     cursor.execute('''
-        CREATE UNIQUE INDEX IF NOT EXISTS idx_ticker_scraped 
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_ticker_scraped
         ON cleaned_stocks (ticker, scraped_at)
     ''')
 
-    # Optional: keep only last 45 days of history (prevents DB from growing forever)
+    # Optional: keep only last 45 days (prevents DB from growing forever)
     cursor.execute("DELETE FROM cleaned_stocks WHERE scraped_at < date('now', '-45 days')")
 
     conn.commit()
     conn.close()
     print(f"✅ Successfully appended {len(df_cleaned)} new rows to cleaned_stocks")
-    
-# ETL PIPELINE
+
 def etl_pipeline():
     print(f"ETL started at {datetime.now().strftime('%Y-%m-%d %H:%M')}")
-
-    # Use recent data only (much safer)
+    
+    # Use recent data only (much safer and faster)
     df_raw = extract_recent_raw_stocks(days=2)
-
+    
     if df_raw.empty:
         print("No new raw data found. Skipping ETL.")
         return
-
+    
     cleaned_df = transform_stocks_data(df_raw)
     load_cleaned_data(cleaned_df)
     print("ETL completed successfully.\n")
