@@ -16,7 +16,7 @@ def extract_all_raw_stocks():
     '''
     df = pd.read_sql_query(query, conn)
     conn.close()
-    print(f"Extracted {len(df)} total raw records")
+    print(f"Extracted {len(df)} recent raw records (last {days} days)")    
     return df
 
 # TRANSFORMATION (same as before, but applied to all raw data)
@@ -60,38 +60,35 @@ def load_cleaned_data(df_cleaned):
         return
 
     conn = get_connection()
-    cursor = conn.cursor()
 
-    # Optional: Create unique index if not exists (prevents duplicates)
+    # This is the key fix: always create the table if it doesn't exist
+    df_cleaned.to_sql('cleaned_stocks', conn, if_exists='append', index=False)
+
+    # Add index safely AFTER the table exists
+    cursor = conn.cursor()
     cursor.execute('''
-        CREATE UNIQUE INDEX IF NOT EXISTS idx_ticker_scraped_at
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_ticker_scraped 
         ON cleaned_stocks (ticker, scraped_at)
     ''')
 
-    # Append new data
-    df_cleaned.to_sql('cleaned_stocks', conn, if_exists='append', index=False)
-
-    # Optional: Clean up very old data (keep last 30 days)
-    cursor.execute('''
-        DELETE FROM cleaned_stocks
-        WHERE scraped_at < date('now', '-30 days')
-    ''')
+    # Optional: keep only last 45 days of history (prevents DB from growing forever)
+    cursor.execute("DELETE FROM cleaned_stocks WHERE scraped_at < date('now', '-45 days')")
 
     conn.commit()
     conn.close()
-
-    print(f"Appended {len(df_cleaned)} new cleaned records (total now unknown)")
+    print(f"✅ Successfully appended {len(df_cleaned)} new rows to cleaned_stocks")
     
 # ETL PIPELINE
 def etl_pipeline():
     print(f"ETL started at {datetime.now().strftime('%Y-%m-%d %H:%M')}")
-    
-    # Extract ALL raw data (not just recent)
-    df_raw = extract_all_raw_stocks()
+
+    # Use recent data only (much safer)
+    df_raw = extract_recent_raw_stocks(days=2)
+
     if df_raw.empty:
-        print("No raw data at all. ETL terminated.")
+        print("No new raw data found. Skipping ETL.")
         return
-    
+
     cleaned_df = transform_stocks_data(df_raw)
     load_cleaned_data(cleaned_df)
     print("ETL completed successfully.\n")
