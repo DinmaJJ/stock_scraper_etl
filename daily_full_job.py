@@ -3,7 +3,9 @@ import os
 from datetime import datetime
 from google.cloud import storage
 import json
-import traceback  # for better error printing
+import traceback
+import pandas as pd  # added for safety check
+import sqlite3      # added for conn_check
 
 # Make sure we can import from the same directory
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
@@ -58,6 +60,19 @@ if __name__ == "__main__":
         # Step 2: ETL – clean & load to cleaned_stocks
         print("Running ETL...")
         run_etl()
+
+        # NEW SAFETY CHECK - verify table exists before upload
+        conn_check = sqlite3.connect(LOCAL_PATH)
+        tables = pd.read_sql("SELECT name FROM sqlite_master WHERE type='table'", conn_check)
+        print("Tables in DB before upload:", tables['name'].tolist())
+        
+        try:
+            max_clean = pd.read_sql("SELECT MAX(scraped_at) FROM cleaned_stocks", conn_check).iloc[0,0]
+            print(f"Before upload — cleaned max scraped_at: {max_clean}")
+        except Exception as check_err:
+            print(f"Before upload — cleaned_stocks check failed: {check_err}")
+
+        conn_check.close()
 
         # Step 3: Upload back to GCS
         upload_db()
