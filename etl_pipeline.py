@@ -56,23 +56,24 @@ def load_cleaned_data(df_cleaned):
 
     conn = get_connection()
 
-    # Append new data (creates table if missing)
+    # Step 1: Append or create the table (this line creates it if missing)
     df_cleaned.to_sql('cleaned_stocks', conn, if_exists='append', index=False)
 
-    # Add unique index safely (after table exists)
+    # Step 2: Now safe to add index (table definitely exists)
     cursor = conn.cursor()
     cursor.execute('''
         CREATE UNIQUE INDEX IF NOT EXISTS idx_ticker_scraped
         ON cleaned_stocks (ticker, scraped_at)
     ''')
 
-    # Optional: keep only last 45 days (prevents DB from growing forever)
+    # Step 3: Clean old data (keep last 45 days)
     cursor.execute("DELETE FROM cleaned_stocks WHERE scraped_at < date('now', '-45 days')")
 
     conn.commit()
     conn.close()
-    print(f"✅ Successfully appended {len(df_cleaned)} new rows to cleaned_stocks")
 
+    print(f"Successfully appended {len(df_cleaned)} new rows to cleaned_stocks (table now exists)")
+    
 def etl_pipeline():
     print(f"ETL started at {datetime.now().strftime('%Y-%m-%d %H:%M')}")
     
