@@ -57,26 +57,28 @@ if __name__ == "__main__":
         init_database()
         daily_scrape_job()
 
-        # Step 2: ETL – clean & load to cleaned_stocks
+        # Step 2: ETL & safety check with SINGLE connection
         print("Running ETL...")
+        conn_etl = sqlite3.connect(LOCAL_PATH)  # long-lived conn
+
+        # Run ETL using this conn (you may need to pass conn to run_etl if your code allows)
+        # For now, since your ETL opens its own conn, we close after ETL and reopen for check
         run_etl()
 
-        # SAFETY CHECK using same connection if possible, but since ETL closes conn, we reopen
-        conn_check = sqlite3.connect(LOCAL_PATH)
-        tables = pd.read_sql("SELECT name FROM sqlite_master WHERE type='table'", conn_check)
+        # Safety check
+        tables = pd.read_sql("SELECT name FROM sqlite_master WHERE type='table'", conn_etl)
         print("Tables in DB before upload:", tables['name'].tolist())
 
         try:
-            # Force disk sync before check
-            os.sync()  # flush file system buffers
-            max_clean = pd.read_sql("SELECT MAX(scraped_at) FROM cleaned_stocks", conn_check).iloc[0,0]
+            os.sync()  # Force OS to flush all buffers to disk
+            max_clean = pd.read_sql("SELECT MAX(scraped_at) FROM cleaned_stocks", conn_etl).iloc[0,0]
+            row_count_check = pd.read_sql("SELECT COUNT(*) FROM cleaned_stocks", conn_etl).iloc[0,0]
             print(f"Before upload — cleaned max scraped_at: {max_clean}")
-            row_count_check = pd.read_sql("SELECT COUNT(*) FROM cleaned_stocks", conn_check).iloc[0,0]
             print(f"Before upload — cleaned rows: {row_count_check}")
         except Exception as check_err:
             print(f"Before upload — cleaned_stocks check failed: {check_err}")
 
-        conn_check.close()
+        conn_etl.close()
 
         # Step 3: Upload
         upload_db()
