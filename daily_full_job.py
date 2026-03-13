@@ -61,20 +61,24 @@ if __name__ == "__main__":
         print("Running ETL...")
         run_etl()
 
-        # NEW SAFETY CHECK - verify table exists before upload
+        # SAFETY CHECK using same connection if possible, but since ETL closes conn, we reopen
         conn_check = sqlite3.connect(LOCAL_PATH)
         tables = pd.read_sql("SELECT name FROM sqlite_master WHERE type='table'", conn_check)
         print("Tables in DB before upload:", tables['name'].tolist())
-        
+
         try:
+            # Force disk sync before check
+            os.sync()  # flush file system buffers
             max_clean = pd.read_sql("SELECT MAX(scraped_at) FROM cleaned_stocks", conn_check).iloc[0,0]
             print(f"Before upload — cleaned max scraped_at: {max_clean}")
+            row_count_check = pd.read_sql("SELECT COUNT(*) FROM cleaned_stocks", conn_check).iloc[0,0]
+            print(f"Before upload — cleaned rows: {row_count_check}")
         except Exception as check_err:
             print(f"Before upload — cleaned_stocks check failed: {check_err}")
 
         conn_check.close()
 
-        # Step 3: Upload back to GCS
+        # Step 3: Upload
         upload_db()
 
         print("=== Daily full job completed successfully ===")
